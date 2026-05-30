@@ -1,0 +1,405 @@
+\section{Рабочий проект}
+В третьей главе были спроектированы архитектура, база данных, маршруты и пользовательский интерфейс системы. В данной главе приводится описание реализации разработанного веб-приложения: спецификация программных компонентов, ключевые алгоритмы, результаты тестирования и инструкция по развёртыванию.
+
+\subsection{Спецификация программных компонентов}
+
+В процессе реализации были созданы следующие программные компоненты: серверные view-функции (файл views.py), клиентские скрипты (файлы script.js и editor.js), а также HTML-шаблоны, содержащие встроенные функции интерфейса.
+
+\subsubsection{Реализация серверной логики}
+
+При реализации серверной логики все view-функции были разделены на группы по их назначению. Для ограничения доступа к функциям, требующим авторизации, использован декоратор \texttt{@login\_required}, который автоматически перенаправляет неавторизованного пользователя на страницу входа. Функции, взаимодействующие с клиентом без перезагрузки страницы, возвращают ответ в формате JSON. Описание функций аутентификации и навигации приведено в таблице \ref{tab:auth-functions}.
+
+\begin{xltabular}{\textwidth}{|>{\centering\arraybackslash}p{3.3cm}|>{\centering\arraybackslash}p{3.2cm}|>{\centering\arraybackslash}p{2.5cm}|X|}
+    \caption{Функции аутентификации и навигации\label{tab:auth-functions}}\\ \hline
+    \centrow Функция & \centrow Входные данные & \centrow Выходные данные & \centrow Описание \\ \hline
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \endfirsthead
+    \continuecaption{Продолжение таблицы \ref{tab:auth-functions}}
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \finishhead
+    \texttt{login\_view} & \texttt{username, password} & \texttt{redirect} или HTML & Аутентификация, вход в систему \\ \hline
+    \texttt{register\_view} & \texttt{username, email, password, confirm} & \texttt{redirect} или HTML & Регистрация, проверка паролей, автоматический вход \\ \hline
+    \texttt{logout\_view} & -- & \texttt{redirect} & Завершение сессии \\ \hline
+    \texttt{dashboard\_view} & \texttt{request.user} & HTML & Отображение списка книг пользователя \\ \hline
+    \texttt{book\_info} & \texttt{book\_id} (из URL) & HTML & Отображение страницы книги с арками и главами \\ \hline
+    \texttt{chapter\_info} & \texttt{chapter\_id} (из URL) & HTML & Отображение страницы редактора главы \\ \hline
+\end{xltabular}
+
+Для управления книгами, арками и главами реализованы функции создания, редактирования и удаления. Функция add\_book работает в синхронном режиме, остальные -- асинхронно. Описание приведено в таблице \ref{tab:crud-functions}.
+
+\begin{xltabular}{\textwidth}{|>{\centering\arraybackslash}p{3.3cm}|>{\centering\arraybackslash}p{3.2cm}|>{\centering\arraybackslash}p{2.5cm}|X|}
+    \caption{Функции управления данными (CRUD)\label{tab:crud-functions}}\\ \hline
+    \centrow Функция & \centrow Входные данные & \centrow Выходные данные & \centrow Описание \\ \hline
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \endfirsthead
+    \continuecaption{Продолжение таблицы \ref{tab:crud-functions}}
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \finishhead
+    \texttt{add\_book} & \texttt{title\_book, size, status} (форма) & \texttt{redirect} & Создание новой книги или редактирование \\ \hline
+    \texttt{add\_arc} & \texttt{title} (JSON) & \texttt{id, title} (JSON) & Создание арки, вычисление \texttt{arc\_number} \\ \hline
+    \texttt{add\_chapter} & \texttt{title} (JSON) & \texttt{id, title} (JSON) & Создание главы, вычисление \texttt{chapter\_number} \\ \hline
+    \texttt{save\_chapter} & \texttt{content} (JSON) & \texttt{success} (JSON) & Сохранение содержимого, создание версии в ChapterVersion \\ \hline
+    \texttt{rename\_arc} & \texttt{title} (JSON) & \texttt{id, title} (JSON) & Обновление названия арки \\ \hline
+    \texttt{rename\_chapter} & \texttt{title} (JSON) & \texttt{title} (JSON) & Обновление названия главы \\ \hline
+    \texttt{delete\_arc} & DELETE запрос & \texttt{success} (JSON) & Удаление арки и всех её глав \\ \hline
+    \texttt{delete\_chapter} & DELETE запрос & \texttt{success} (JSON) & Удаление главы \\ \hline
+    \texttt{delete\_book} & DELETE запрос & \texttt{success} (JSON) & Удаление книги \\ \hline
+\end{xltabular}
+
+Функции импорта и экспорта обеспечивают загрузку черновиков из PDF/DOCX и выгрузку готовых глав в Word. Функция export\_docx работает синхронно, остальные -- асинхронно. Описание приведено в таблице \ref{tab:import-export-functions}.
+
+\begin{xltabular}{\textwidth}{|>{\centering\arraybackslash}p{3.3cm}|>{\centering\arraybackslash}p{3.2cm}|>{\centering\arraybackslash}p{2.5cm}|X|}
+    \caption{Функции импорта и экспорта\label{tab:import-export-functions}}\\ \hline
+    \centrow Функция & \centrow Входные данные & \centrow Выходные данные & \centrow Описание \\ \hline
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \endfirsthead
+    \continuecaption{Продолжение таблицы \ref{tab:import-export-functions}}
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \finishhead
+    \texttt{upload\_file} & \texttt{file} (PDF/DOCX), \texttt{chapter\_id} & \texttt{total\_pages, preview} (JSON) & Сохранение файла во временную папку, подсчёт страниц \\ \hline
+    \texttt{import\_pages} & \texttt{chapter\_id, pages} (JSON) & \texttt{content} (JSON) & Извлечение текста из выбранных страниц \\ \hline
+    \texttt{export\_docx} & \texttt{chapter\_id} & DOCX (бинарный) & Экспорт одной главы в Word \\ \hline
+    \texttt{export\_selected \_chapters} & \texttt{chapter\_ids} (JSON) & DOCX (бинарный) & Экспорт выбранных глав в один файл \\ \hline
+\end{xltabular}
+
+Функции работы с обложками и ИИ-ассистентом работают в асинхронном режиме. Описание приведено в таблице \ref{tab:cover-ai-functions}.
+
+\begin{xltabular}{\textwidth}{|>{\centering\arraybackslash}p{3.3cm}|>{\centering\arraybackslash}p{3.2cm}|>{\centering\arraybackslash}p{2.5cm}|X|}
+    \caption{Функции работы с обложками и ИИ-ассистентом\label{tab:cover-ai-functions}}\\ \hline
+    \centrow Функция & \centrow Входные данные & \centrow Выходные данные & \centrow Описание \\ \hline
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \endfirsthead
+    \continuecaption{Продолжение таблицы \ref{tab:cover-ai-functions}}
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \finishhead
+    \texttt{update\_cover} & \texttt{cover} (файл) & \texttt{success, cover\_url} (JSON) & Загрузка обложки, удаление старого файла \\ \hline
+    \texttt{delete\_cover} & \texttt{book\_id} & \texttt{success} (JSON) & Удаление обложки, установка \texttt{default.png} \\ \hline
+    \texttt{ai\_chat} & \texttt{message, context} (JSON) & \texttt{reply, model} (JSON) & Запрос к OpenRouter, перебор моделей при лимитах \\ \hline
+    \texttt{get\_book\_content} & \texttt{book\_id} (JSON) & \texttt{content} (JSON) & Сбор содержимого всех глав для контекста ИИ \\ \hline
+\end{xltabular}
+
+\subsubsection{Реализация клиентской логики}
+
+Клиентская логика реализована в двух файлах: script.js и editor.js, а также в виде встроенных функций в HTML-шаблонах.
+
+Файл script.js содержит вспомогательные функции, используемые на всех страницах. Их описание приведено в таблице \ref{tab:script-functions}.
+
+\begin{xltabular}{\textwidth}{|c|c|c|X|}
+    \caption{Вспомогательные функции\label{tab:script-functions}}\\ \hline
+    \centrow Функция & \centrow Входные данные & \centrow Выходные данные & \centrow Описание \\ \hline
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \endfirsthead
+    \continuecaption{Продолжение таблицы \ref{tab:script-functions}}
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \finishhead
+    \texttt{getCookie} & \texttt{name} (строка) & значение cookie или \texttt{null} & Получение CSRF-токена для AJAX-запросов \\ \hline
+    \texttt{escapeHtml} & \texttt{text} (строка) & экранированная строка & Замена символов \texttt{<}, \texttt{>}, \texttt{\&} на HTML-сущности для защиты от XSS \\ \hline
+\end{xltabular}
+
+Файл editor.js обеспечивает работу текстового редактора, импорт файлов и взаимодействие с ИИ-ассистентом. Описание его функций приведено в таблице \ref{tab:editor-functions}.
+
+\begin{xltabular}{\textwidth}{|>{\centering\arraybackslash}p{3.3cm}|>{\centering\arraybackslash}p{3.2cm}|>{\centering\arraybackslash}p{2.5cm}|X|}
+    \caption{Функции редактора и импорта\label{tab:editor-functions}}\\ \hline
+    \centrow Функция & \centrow Входные данные & \centrow Выходные данные & \centrow Описание \\ \hline
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \endfirsthead
+    \continuecaption{Продолжение таблицы \ref{tab:editor-functions}}
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \finishhead
+    \texttt{updateWordCount} & содержимое редактора & обновление счётчиков в DOM & Подсчёт слов и символов в текущей главе \\ \hline
+    \texttt{uploadFile} & \texttt{file} (объект File) & отправка на сервер, отображение числа страниц & Загрузка PDF/DOCX, получение информации о страницах \\ \hline
+    \texttt{parsePageRange} & \texttt{range} (строка), \texttt{totalPages} (число) & массив номеров страниц & Преобразование строки диапазона в массив страниц \\ \hline
+    \texttt{startImport} & -- & вставка HTML в редактор & Импорт выбранных страниц из загруженного файла \\ \hline
+\end{xltabular}
+
+Функции для работы с AI-чатом приведены в таблице \ref{tab:ai-functions}.
+
+\begin{xltabular}{\textwidth}{|>{\centering\arraybackslash}p{3.3cm}|>{\centering\arraybackslash}p{3.2cm}|>{\centering\arraybackslash}p{2.5cm}|X|}
+    \caption{Функции AI-ассистента\label{tab:ai-functions}}\\ \hline
+    \centrow Функция & \centrow Входные данные & \centrow Выходные данные & \centrow Описание \\ \hline
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \endfirsthead
+    \continuecaption{Продолжение таблицы \ref{tab:ai-functions}}
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \finishhead
+    \texttt{sendToAI} & \texttt{message} (строка) & \texttt{reply} (строка) & Отправка запроса к серверу, получение ответа \\ \hline
+    \texttt{addMessage} & \texttt{text} (строка), \texttt{isUser} (логический) & DOM-элемент & Отображение сообщения в окне чата с Markdown-разметкой \\ \hline
+    \texttt{sendMessage} & -- & -- & Обработчик отправки сообщения (кнопка или Enter) \\ \hline
+\end{xltabular}
+
+Часть функций управления интерфейсом реализована непосредственно в HTML-шаблонах, они управляют динамическим поведением страниц. Их описание приведено в таблице \ref{tab:html-functions}. 
+
+\begin{xltabular}{\textwidth}{|c|c|X|}
+    \caption{Функции интерфейса (встроенные в HTML)\label{tab:html-functions}}\\ \hline
+    \centrow Функция & \centrow Расположение & \centrow Описание \\ \hline
+    \centrow 1 & \centrow 2 & \centrow 3 \\ \hline
+    \endfirsthead
+    \continuecaption{Продолжение таблицы \ref{tab:html-functions}}
+    \centrow 1 & \centrow 2 & \centrow 3 \\ \hline
+    \finishhead
+    \texttt{setupArcToggle} & \texttt{book\_info.html} & Раскрытие и скрытие списка глав в арке \\ \hline
+    \texttt{setupRenameChapter} & \texttt{book\_info.html} & Открытие диалога переименования главы \\ \hline
+    \texttt{setupRenameArc} & \texttt{book\_info.html} & Открытие диалога переименования арки \\ \hline
+    \texttt{setupDeleteArc} & \texttt{book\_info.html} & Удаление арки и всех её глав \\ \hline
+    \texttt{setupAddChapter} & \texttt{book\_info.html} & Создание новой главы через диалог \\ \hline
+    \texttt{setupDeleteChapter} & \texttt{book\_info.html} & Удаление главы \\ \hline
+    \texttt{setupChapterClick} & \texttt{book\_info.html} & Переход на страницу редактора главы \\ \hline
+    \texttt{deleteCover} & \texttt{book\_info.html} & Удаление обложки книги \\ \hline
+    \texttt{showExportModal} & \texttt{book\_info.html} & Открытие окна выбора глав для экспорта \\ \hline
+    \texttt{filterBooks} & \texttt{dashboard.html} & Фильтрация книг по названию, размеру и статусу \\ \hline
+    \texttt{toggleArcChapters} & \texttt{chapter.html} & Сворачивание и разворачивание панели навигации \\ \hline
+\end{xltabular}
+
+\subsection{Реализация ключевых алгоритмов}
+
+\subsubsection{Алгоритм автосохранения текста}
+
+Автосохранение реализовано в файле \texttt{editor.js} и позволяет сохранять содержимое главы на сервер без участия пользователя. Алгоритм работает следующим образом:
+
+\begin{enumerate}
+    \item При каждом изменении текста в редакторе Quill срабатывает событие \texttt{text-change}.
+    \item Вызывается функция \texttt{updateWordCount()} для обновления счётчиков слов и символов.
+    \item Запускается таймер, который откладывает сохранение на 1 секунду.
+    \item Если за это время пользователь снова меняет текст, предыдущий таймер сбрасывается и запускается новый.
+    \item После прекращения ввода отправляется асинхронный POST-запрос на сервер с содержимым главы в формате JSON.
+    \item На сервере функция \texttt{save\_chapter} проверяет, изменилось ли содержимое. Если да -- создаётся новая запись в таблице \texttt{ChapterVersion} (предыдущая версия), после чего обновляется поле \texttt{content} текущей главы.
+\end{enumerate}
+
+Преимуществом данного подхода является то, что пользователь не теряет текст при случайном закрытии страницы или сбое браузера.
+
+\subsubsection{Алгоритм импорта черновиков из PDF и DOCX}
+
+Импорт черновиков реализован в виде трёхшагового мастера, который позволяет пользователю загрузить файл, выбрать нужные страницы и вставить их текст в редактор:
+
+\begin{enumerate}
+    \item Загрузка файла. Пользователь выбирает файл формата PDF или DOCX через проводник или перетаскиванием в область загрузки. Файл отправляется на сервер асинхронным POST-запросом к функции \texttt{upload\_file}. Сервер сохраняет файл во временную папку и определяет общее количество страниц: для PDF используется библиотека \texttt{PyPDF2}, для DOCX -- библиотека \texttt{python-docx}. Количество страниц и превью текста возвращаются в браузер.
+    
+    \item Выбор страниц. Пользователь вводит диапазон страниц в текстовое поле. Функция \texttt{parsePageRange} преобразует эту строку в массив номеров страниц с учётом всех допустимых форматов: отдельные страницы, диапазоны, ключевое слово «все». Если ввод некорректен, выводится сообщение об ошибке.
+    
+    \item Импорт текста. После подтверждения отправляется запрос к функции \texttt{import\_pages}. Сервер извлекает текст из указанных страниц. Для PDF -- через \texttt{PyPDF2}, для DOCX -- через \texttt{python-docx} с разбивкой примерно по 30 параграфов на страницу. Извлечённый текст преобразуется в HTML и вставляется в конец текущего содержимого редактора.
+\end{enumerate}
+
+\subsubsection{Алгоритм экспорта глав в DOCX}
+
+Экспорт глав выполняется в формате DOCX с сохранением форматирования. Алгоритм реализован в функции \texttt{export\_docx} (для одной главы) и \texttt{export\_selected\_chapters} (для нескольких глав):
+
+\begin{enumerate}
+    \item Очистка HTML. HTML-содержимое главы обрабатывается через \texttt{BeautifulSoup}, который удаляет специфические классы Quill (начинающиеся с \texttt{ql-}) и преобразует их в inline-стили.
+    \item Разбор элементов. Каждый элемент разбирается рекурсивно:
+    \begin{itemize}
+        \item заголовки (\texttt{<h1>}–\texttt{<h6>}) преобразуются в заголовки Word с соответствующим размером шрифта;
+        \item обычные параграфы (\texttt{<p>}) добавляются как абзацы с сохранением выравнивания (left, center, right, justify).
+    \end{itemize}
+    
+    \item Применение форматирования. Цвет текста извлекается из атрибута \texttt{style} и преобразуется в RGB. Жирное начертание (\texttt{<strong>}, \texttt{<b>}), курсив (\texttt{<em>}, \texttt{<i>}) и подчёркивание (\texttt{<u>}) переносятся в соответствующие свойства шрифта.
+    
+    \item Формирование документа. Готовый документ возвращается браузеру в виде бинарного файла. При экспорте нескольких глав в один документ каждая глава начинается с новой страницы.
+\end{enumerate}
+
+\subsubsection{Алгоритм работы ИИ-ассистента}
+
+ИИ-ассистент является ключевой особенностью разработанного приложения. Он реализован через интеграцию со сторонним сервисом OpenRouter, который предоставляет унифицированный API для доступа к различным языковым моделям. Выбор OpenRouter обусловлен несколькими причинами: сервис агрегирует множество бесплатных и платных моделей, не требует развёртывания собственных вычислительных мощностей и предоставляет простой REST API:
+
+\begin{enumerate}
+    \item Выбор моделей. В системе используется список бесплатных моделей, предоставляемых OpenRouter. Алгоритм последовательно перебирает модели из этого списка. Если текущая модель недоступна (превышен лимит запросов или требуется оплата), система автоматически переключается на следующую. Резервным вариантом выступает модель, выбираемая самим сервисом OpenRouter. Такой подход обеспечивает отказоустойчивость и позволяет обойти ограничения по лимитам (rate limits).
+    
+    \item Формирование контекста. Ассистент поддерживает два режима работы. В общем режиме запрос отправляется модели без дополнительного контекста. В контекстном режиме (режим книги) к запросу добавляется название книги, текущей главы, содержание главы и фрагменты других глав книги (до 3000 символов). Это позволяет ассистенту давать ответы с учётом сюжета, персонажей и уже написанного текста.
+    
+    \item Отправка запроса. Для каждой модели формируется HTTP-запрос к эндпоинту \texttt{https://openrouter.ai/api/v1/chat/completions}. Заголовки запроса включают API-ключ (\texttt{Authorization: Bearer <API\_KEY>}), тип содержимого и идентификатор приложения. Тело запроса содержит системный промпт, сообщение пользователя, параметр \texttt{temperature} (0.7 для творческих задач, 0.3 для общих) и ограничение \texttt{max\_tokens} (2000).
+    
+    \item Обработка ответа и fallback-механизм. Если модель возвращает успешный ответ (код 200), результат извлекается из JSON и отображается пользователю в окне чата с поддержкой Markdown-разметки. При получении кодов ошибок 429 (превышен лимит запросов) или 402 (требуется оплата) система автоматически переключается на следующую модель из списка. Если ни одна модель не ответила успешно, пользователю выводится сообщение о временной недоступности сервиса.
+    
+    \item Безопасность хранения API-ключа. API-ключ OpenRouter хранится в переменной окружения \texttt{OPENROUTER\_API\_KEY} и не включается в исходный код. В файле \texttt{settings.py} он загружается через \texttt{os.getenv('OPENROUTER\_API\_KEY')}. Это исключает риск случайной публикации ключа при размещении кода в открытых репозиториях. При локальном развёртывании ключ прописывается в файле \texttt{.env}, который добавляется в \texttt{.gitignore}.
+    
+    \item Взаимодействие с клиентом. На клиентской стороне сообщения пользователя и ответы ассистента отображаются в модальном окне. Пользователь может переключаться между общим и контекстным режимами с помощью чекбокса. Для форматирования ответов используется библиотека \texttt{marked.js}, преобразующая Markdown в HTML. Отправка запроса выполняется асинхронно, поэтому интерфейс редактора не блокируется на время ожидания ответа.
+\end{enumerate}
+
+\subsection{Функциональное тестирование}
+
+Для проверки работоспособности разработанного приложения было проведено функциональное тестирование. Проверялись основные сценарии использования системы: регистрация, создание книги, управление арками и главами, редактирование текста, импорт и экспорт файлов, работа ИИ-ассистента.
+
+\subsubsection{Тестовый сценарий: регистрация нового пользователя}
+
+\textbf{Предусловие:} приложение запущено, открыта страница регистрации (рисунок \ref{fig:reg-form}). База данных не содержит пользователя с вводимыми username и email.
+
+\textbf{Тестовый случай:} пользователь вводит имя пользователя «test», адрес электронной почты «test@mail.ru», пароль «test123», подтверждение пароля «test123» и нажимает кнопку «Зарегистрироваться».
+
+\textbf{Ожидаемый результат:} система создаёт новую учётную запись, выполняет автоматический вход и перенаправляет пользователя на главную страницу со списком книг (рисунок \ref{fig:reg-filled}.
+
+\textbf{Результат:} тест пройден успешно.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{тест_регистр1.jpg}
+    \caption{Форма регистрации нового пользователя}
+    \label{fig:reg-form}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{тест_регистр2.jpg}
+    \caption{Заполненная форма регистрации}
+    \label{fig:reg-filled}
+\end{figure}
+
+\subsubsection{Тестовый сценарий: вход в систему}
+
+\textbf{Предусловие:} приложение запущено, открыта страница входа (рисунок \ref{fig:login-form}). В базе данных существует пользователь с username «kass» и паролем «kass*-*1503».
+
+\textbf{Тестовый случай:} пользователь вводит имя пользователя «kass», пароль «kass*-*1503» и нажимает кнопку «Войти».
+
+\textbf{Ожидаемый результат:} система проверяет учётные данные, выполняет авторизацию и перенаправляет пользователя на главную страницу со списком книг.
+
+\textbf{Результат:} после нажатия кнопки «Войти» система выполнила перенаправление на главную страницу (рисунок \ref{fig:login-dashboard}). В верхней части страницы отображается приветствие «Привет, kass!», что подтверждает успешный вход. Список книг отображает ранее созданные пользователем произведения.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{тест_вход1.jpg}
+    \caption{Форма входа в аккаунт}
+    \label{fig:login-form}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{тест_вход2.jpg}
+    \caption{Главная страница после успешного входа}
+    \label{fig:login-dashboard}
+\end{figure}
+
+\subsubsection{Тестовый сценарий: создание новой книги}
+
+\textbf{Предусловие:} пользователь авторизован (выполнен вход), открыта главная страница (рисунок \ref{fig:login-dashboard}).
+
+\textbf{Тестовый случай:} пользователь нажимает кнопку «Добавить книгу», вводит название «Our Lost Time», выбирает размер «Макси», статус «Черновик» (рисунок \ref{fig:book-add-form}) и нажимает кнопку «Добавить».
+
+\textbf{Ожидаемый результат:} система создаёт новую книгу и перенаправляет пользователя на страницу этой книги.
+
+\textbf{Результат:} после нажатия кнопки «Добавить» система открыла страницу книги (рисунок \ref{fig:book-page}). В заголовке страницы отображается название «Our Lost Time». Справа отображаются кнопки «Добавить арку» и «Экспорт в Word». Список арок пуст, так как книга только что создана.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{создание_книги1.jpg}
+    \caption{Форма добавления новой книги}
+    \label{fig:book-add-form}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{создание_книги2.jpg}
+    \caption{Страница созданной книги}
+    \label{fig:book-page}
+\end{figure}
+
+\subsubsection{Тестовый сценарий: добавление арки и главы}
+
+\textbf{Предусловие:} пользователь авторизован, открыта страница книги «Итерация» (рисунок \ref{fig:arc-before}).
+
+\textbf{Тестовый случай:}
+\begin{enumerate}
+    \item Пользователь нажимает кнопку «Добавить арку», вводит название арки «АКТ 3: Сколько миль до Вавилона?» и нажимает «ОК».
+    \item Затем нажимает кнопку «+» рядом с названием арки, вводит название главы «Глава 12: Гаджо» и подтверждает создание.
+\end{enumerate}
+
+\textbf{Ожидаемый результат:}
+\begin{itemize}
+    \item после первого шага в списке появляется арка с указанным названием;
+    \item после второго шага внутри арки появляется глава с указанным названием.
+\end{itemize}
+
+\textbf{Результат:} на рисунке \ref{fig:arc-after} видно, что арка «АКТ 3: Сколько миль до Вавилона?» создана, а внутри неё отображается глава «Глава 12: Гаджо».
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{тест_арка_и_глава1.jpg}
+    \caption{Страница книги до добавления новой арки и главы}
+    \label{fig:arc-before}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{тест_арка_и_глава2.jpg}
+    \caption{Страница книги после добавления арки и главы}
+    \label{fig:arc-after}
+\end{figure}
+
+\subsubsection{Тестовый сценарий: редактирование текста главы}
+
+\textbf{Предусловие:} пользователь авторизован, открыта страница книги «Итерация» с созданной аркой и главой «Глава 12: Гаджо» (рисунок \ref{fig:arc-after}).
+
+\textbf{Тестовый случай:} пользователь нажимает на название главы «Глава 12: Гаджо», в открывшемся редакторе вводит текст, форматирует его, дожидается автосохранения.
+
+\textbf{Ожидаемый результат:} система открывает страницу редактора главы. При вводе текста обновляется счётчик слов и символов. Через 1 секунду после остановки ввода текст автоматически сохраняется.
+
+\textbf{Результат:} на рисунке \ref{fig:chapter-editor} представлена страница редактора с введённым текстом. В правой части тулбара отображается счётчик: 156 слов | 854 симв. Панель навигации справа позволяет переключаться между главами. При возврате на страницу книги и повторном открытии главы введённый текст сохранился.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{тест_редактор.jpg}
+    \caption{Страница редактора главы с отформатированным текстом}
+    \label{fig:chapter-editor}
+\end{figure}
+
+\subsubsection{Тестовый сценарий: импорт текста из DOCX}
+
+\textbf{Предусловие:} пользователь авторизован, открыта страница редактора главы «Глава 12: Гаджо» (рисунок \ref{fig:chapter-editor}). Подготовлен файл «Итерация черновик.docx» с отформатированным текстом.
+
+\textbf{Тестовый случай:} пользователь нажимает кнопку «Импорт», выбирает файл «Итерация черновик.docx», указывает страницы «1-35» и нажимает «Импортировать текст».
+
+\textbf{Ожидаемый результат:} система загружает файл, извлекает текст с 1 по 35 страницы, преобразует его в HTML и вставляет в редактор. Исходная структура абзацев и форматирование должны сохраниться.
+
+\textbf{Результат:} на рисунке \ref{fig:import-modal} представлено модальное окно импорта с выбранным файлом. На рисунке \ref{fig:import-result} видно, что текст из DOCX успешно вставлен в редактор с сохранением абзацев и форматирования. Счётчик слов обновился и показывает 10988 слов | 58653 симв.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{тест_импорт1.jpg}
+    \caption{Модальное окно импорта с выбранным файлом}
+    \label{fig:import-modal}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{тест_импорт2.jpg}
+    \caption{Редактор после импорта текста из DOCX}
+    \label{fig:import-result}
+\end{figure}
+
+\subsubsection{Тестовый сценарий: экспорт глав в DOCX}
+
+\textbf{Предусловие:} пользователь авторизован, открыта страница книги «Итерация» с арками и главами. (рисунок \ref{fig:arc-after}).
+
+\textbf{Тестовый случай:} пользователь нажимает кнопку «Экспорт в Word», в открывшемся окне (рисунок \ref{fig:export-modal}) отмечает главы «Глава 7: Дом, милый дом», «Интерлюдия: доктор Фостер» и «Глава 12: Гаджо», затем нажимает «Экспортировать».
+
+\textbf{Ожидаемый результат:} система формирует документ DOCX, содержащий выбранные главы с сохранением форматирования. Каждая глава начинается с новой страницы.
+
+\textbf{Результат:} на рисунке \ref{fig:export-result} показан фрагмент полученного DOCX-файла. Главы начинаются с новой страницы.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{тест_экспорт1.jpg}
+    \caption{Окно выбора глав для экспорта}
+    \label{fig:export-modal}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{тест_экспорт2.jpg}
+    \caption{Фрагмент экспортированного DOCX-файла}
+    \label{fig:export-result}
+\end{figure}
+
+\subsubsection{Тестовый сценарий: работа ИИ-ассистента}
+
+\textbf{Предусловие:} пользователь авторизован, открыта страница редактора главы «Глава 12: Гаджо» (рисунок \ref{fig:chapter-editor}). Установлено подключение к API OpenRouter.
+
+\textbf{Тестовый случай:} пользователь нажимает кнопку «AI-ассистент», в открывшемся окне (рисунок \ref{fig:ai-chat}) вводит вопрос «Какие чувства испытывает главный герой в этой главе?» и нажимает кнопку отправки.
+
+\textbf{Ожидаемый результат:} система отправляет запрос к языковой модели, получает ответ и отображает его в окне чата. Ответ должен быть сформулирован на русском языке с учётом контекста книги (контекстный режим).
+
+\textbf{Результат:} на рисунке \ref{fig:ai-chat} представлено окно ИИ-ассистента с вопросом пользователя и полным ответом модели. Ответ содержит анализ эмоционального состояния персонажа, ссылается на события главы. Ответ отформатирован с использованием Markdown (заголовки, списки). Диалог сохраняется в окне чата.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{тест_ИИ.jpg}
+    \caption{Окно ИИ-ассистента с вопросом и ответом модели}
+    \label{fig:ai-chat}
+\end{figure}

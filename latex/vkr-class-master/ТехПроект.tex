@@ -1,0 +1,554 @@
+\section{Технический проект}
+
+\subsection{Общие сведения о программной системе}
+
+Разрабатываемая система представляет собой веб-приложение, предназначенное для управления авторским контентом. Она обеспечивает полный цикл работы над произведением. В основе архитектуры лежит клиент-серверная модель, где серверная часть реализована на фреймворке Django, а клиентская часть работает в браузере и включает встроенный текстовый редактор Quill.
+
+Выбор Django обусловлен тем, что этот фреймворк предоставляет встроенные средства для работы с базами данных, аутентификации пользователей, обработки HTTP-запросов и защиты от типовых веб-уязвимостей. Архитектурно он следует шаблону Model-View-Template. Модели описывают структуру данных и через встроенный механизм ORM (Object-Relational Mapping) позволяют работать с базой данных как с объектами Python, автоматически генерируя SQL-запросы к SQLite. View-функции содержат бизнес-логику, а шаблоны отвечают за формирование HTML-страниц. Обработка запросов построена на системе маршрутизации, где URL сопоставляется с нужной view-функцией, которая взаимодействует с моделями данных и возвращает ответ -- HTML-страницу или JSON. Для обеспечения безопасности во всех формах применяется CSRF-токен, что исключает возможность подделки запросов, а пароли пользователей хранятся в виде хешей, предотвращая их компрометацию даже при несанкционированном доступе к базе данных.
+
+В качестве системы управления базами данных используется SQLite. Это легковесная встраиваемая СУБД, которая хранит всю базу данных в одном файле на сервере. Такой подход избавляет от необходимости разворачивать и администрировать отдельный сервер. SQLite поддерживает стандартные SQL-запросы и транзакции, обеспечивая целостность данных при создании, редактировании и удалении записей. Для проекта, ориентированного на индивидуальную работу авторов, производительности SQLite достаточно.
+
+Для редактирования текста применяется редактор Quill, который обеспечивает привычное для пользователя форматирование. Редактор сохраняет содержимое в формате HTML, что упрощает хранение текста в базе данных и последующий экспорт в DOCX. Взаимодействие с сервером построено на асинхронных HTTP-запросах, благодаря чему автосохранение выполняется без перезагрузки страницы и незаметно для пользователя.
+
+Для работы с внешними форматами в проекте используются библиотеки PyPDF2 и python-docx. Первая задействована при импорте черновиков из PDF -- она извлекает текст из страниц, выбранных пользователем. Вторая применяется как при импорте DOCX-файлов, так и при экспорте готовых глав. Она формирует итоговый документ с сохранением форматирования.
+
+Интеграция с ИИ-ассистентом осуществляется через API сервиса OpenRouter, который выступает в роли шлюза к различным языковым моделям. Выбор OpenRouter обусловлен тем, что сервис предоставляет доступ к широкому спектру моделей через единый интерфейс, имеет бесплатные тарифы и не требует развёртывания собственных вычислительных мощностей для работы с ИИ. Запросы к API отправляются асинхронно, поэтому интерфейс редактора не блокируется на время ожидания ответа -- пользователь может продолжать работать с текстом.
+
+\subsection{Проектирование архитектуры программной системы}
+
+\subsubsection{Архитектура развертывания системы}
+
+На основе функциональных требований, описанных в разделе 2, была спроектирована архитектура развертывания системы, которая определяет, как программные компоненты распределяются по физическим узлам и как они взаимодействуют между собой. Архитектура включает три узла в соответствии с диаграммой, представленной на рисунке~\ref{fig:deployment}.
+
+Первый узел -- это браузер, в котором выполняются HTML-страницы и текстовый редактор. Через него пользователю доступны все основные действия.
+
+Второй узел -- сервер приложений. В его составе функционируют веб-фреймворк для обработки запросов и база данных для хранения информации о пользователях, книгах, арках и главах. Через этот же узел организовано взаимодействие с внешним сервисом.
+
+Третий узел -- OpenRouter. Он обеспечивает доступ к языковым моделям, принимая запросы от сервера и возвращая ответы.
+
+Обмен данными между клиентом и сервером ведётся по протоколу HTTP/HTTPS, а связь с OpenRouter реализована через REST API.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{диаграмма развертывания}
+    \caption{Диаграмма развертывания системы}
+    \label{fig:deployment}
+\end{figure}
+
+\subsubsection{Компоненты программной системы}
+
+Разрабатываемая система имеет модульную структуру, в которой можно выделить клиентскую часть и серверную часть. Помимо этого, система опирается на внешние библиотеки и сервисы. Общая структура компонентов и связей между ними показана на рисунке~\ref{fig:components}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{диаграмма компонентов1}
+    \caption{Диаграмма компонентов системы}
+    \label{fig:components}
+\end{figure}
+
+\paragraph{Клиентская часть}
+
+Клиентская часть включает пять HTML-страниц, каждая из которых отвечает за свой режим работы. Страницы auth.html и register.html реализуют интерфейс входа и регистрации. Страница dashboard.html отображает список книг текущего автора с возможностью фильтрации по названию, размеру и статусу, а также содержит кнопки для создания, редактирования и удаления книг. Страница book\_info.html предназначена для работы с содержимым конкретной книги. Страница chapter.html содержит текстовый редактор и боковую панель навигации по книге.
+
+Все HTML-страницы наследуются от базового шаблона home.html, который определяет общую структуру интерфейса: боковую панель с логотипом, навигацию и область основного содержимого. Это позволяет унифицировать внешний вид приложения и избежать дублирования кода вёрстки.
+
+В состав клиентской части также входит файл editor.js, который отвечает за работу текстового редактора. При открытии страницы главы он инициализирует редактор Quill, настраивает тулбар форматирования и запускает механизм автосохранения. Компонент editor.js напрямую использует библиотеку Quill, которая загружается в браузер и предоставляет инструменты форматирования текста.
+
+\paragraph{Серверная часть и база данных}
+
+Серверная часть построена на фреймворке Django и организована по архитектурному шаблону Model-View-Template. Запрос из браузера сначала попадает в urls.py, где описан маршрут для каждого действия. Затем запрос передаётся в views.py, где реализована вся бизнес-логика. Компонент views.py, в свою очередь, обращается к models.py, где описаны модели данных. 
+
+Хранение всех данных осуществляется в базе SQLite, которая не требует отдельного сервера и хранит всю информацию в одном файле.
+
+Для работы с внешними форматами views.py использует две библиотеки: PyPDF2 и python-docx. Для доступа к языковым моделям views.py отправляет REST API-запросы к сервису OpenRouter, передавая контекст текущей книги и получая ответы, которые затем возвращаются в браузер.
+
+Обмен данными между клиентской и серверной частями построен по протоколу HTTP/HTTPS. Клиент отправляет как синхронные, так и асинхронные запросы. Асинхронные запросы выполняются без перезагрузки страницы, что делает интерфейс более отзывчивым.
+
+\subsubsection{Модели данных}
+
+Архитектура программной системы на уровне классов определяется моделями, описанными в файле models.py. На рисунке~\ref{fig:classes} представлена диаграмма классов, отражающая основные сущности системы, их атрибуты и методы.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\linewidth]{диаграмма классов}
+    \caption{Диаграмма классов системы}
+    \label{fig:classes}
+\end{figure}
+
+Все классы наследуются от стандартного базового класса Django models.Model, что обеспечивает их автоматическую привязку к таблицам базы данных через ORM. Каждый класс содержит метод \_\_str\_\_(), возвращающий строковое представление объекта.
+
+Класс User является встроенной моделью Django и отвечает за хранение учётных данных пользователей. Аутентификация, хеширование паролей и управление сессиями реализуются стандартными средствами фреймворка. Связь с классом Book осуществляется через внешний ключ: один пользователь может создать множество книг.
+
+Класс Book описывает книгу. Помимо основных атрибутов (название, размер, статус, путь к обложке), он содержит поле chapter\_count, которое обновляется автоматически через сигналы Django при создании или удалении глав. Объекты этого класса создаются при нажатии кнопки «Добавить книгу» на главной странице приложения. Связь с классом Arc построена по принципу «один-ко-многим»: одна книга может содержать несколько арок.
+
+Класс Arc представляет сюжетную арку -- логический блок, объединяющий несколько глав. Атрибут arc\_number определяет порядок арки в книге. Арки создаются и управляются через интерфейс страницы книги. Связь с классом Chapter также имеет тип «один-ко-многим»: одна арка может включать несколько глав.
+
+Класс Chapter описывает главу. Её содержимое хранится в поле content в формате HTML, что позволяет сохранять форматирование, заданное в редакторе Quill. Атрибут chapter\_number задаёт порядок главы внутри арки. При нажатии кнопки «Сохранить» или срабатывании автосохранения содержимое главы обновляется в базе данных, а предыдущая версия текста автоматически сохраняется в классе ChapterVersion.
+
+Класс ChapterVersion служит для хранения предыдущих состояний текста главы. Он связан с классом Chapter внешним ключом: одна глава может иметь несколько сохранённых версий. При каждом сохранении создаётся запись с копией содержимого и временной меткой.
+
+\subsection{Проектирование базы данных}
+
+База данных разрабатываемой системы обеспечивает хранение иерархической структуры книг, содержимого глав, учётных записей пользователей и истории изменений текста. Проектирование выполнено в реляционной модели с соблюдением третьей нормальной формы (3НФ). Логическая схема базы данных представлена на ER-диаграмме (диаграмме «сущность-связь») -- рисунок~\ref{fig:er-diagram}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{ER диаграмма}
+    \caption{Диаграмма «сущность-связь»}
+    \label{fig:er-diagram}
+\end{figure}
+
+Схема включает пять таблиц. В соответствии с принятой в проектировании баз данных классификацией, они делятся на основные (master) и транзакционные (transactional).
+
+\textbf{Основные таблицы (master data)} -- содержат данные, которые задаются при создании и изменяются редко:
+\begin{itemize}
+\item User -- учётные данные пользователей;
+\item Book -- информация о книгах.
+\end{itemize}
+
+\textbf{Транзакционные таблицы (transactional data)} -- содержат данные, которые активно создаются и изменяются в процессе работы автора:
+\begin{itemize}
+\item Arc -- сюжетные арки внутри книг;
+\item Chapter -- главы внутри арок;
+\item ChapterVersion -- сохранённые версии глав.
+\end{itemize}
+
+Рассмотрим структуру каждой таблицы подробнее. В таблицах \ref{tab:user}–\ref{tab:chapterversion} приведены спецификации с указанием полей, типов данных и их характеристик.
+
+\begin{xltabular}{\textwidth}{|c|c|X|X|c|X|}
+    \caption{Таблица User -- Пользователи системы\label{tab:user}}\\ \hline
+    \centrow Key & \centrow Optionality & \centrow Column name & \centrow Data Type & \centrow Size & \centrow Характеристика \\ \hline
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 & \centrow 5 & \centrow 6 \\ \hline
+    \endfirsthead
+    \continuecaption{Продолжение таблицы \ref{tab:user}}
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 & \centrow 5 & \centrow 6 \\ \hline
+    \endhead
+    \endlastfoot
+    PK & * & id & INT & -- & Уникальный идентификатор пользователя \\ \hline
+    UK & * & username & VARCHAR & 50 & Имя пользователя (логин) \\ \hline
+    UK & * & email & VARCHAR & 254 & Адрес электронной почты \\ \hline
+    & * & password & VARCHAR & 128 & Хеш пароля \\ \hline
+\end{xltabular}
+
+\begin{xltabular}{\textwidth}{|c|c|X|X|c|X|}
+    \caption{Таблица Book -- Книги\label{tab:book}}\\ \hline
+    \centrow Key & \centrow Optionality & \centrow Column name & \centrow Data Type & \centrow Size & \centrow Характеристика \\ \hline
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 & \centrow 5 & \centrow 6 \\ \hline
+    \endfirsthead
+    \continuecaption{Продолжение таблицы \ref{tab:book}}
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 & \centrow 5 & \centrow 6 \\ \hline
+    \endhead
+    \endlastfoot
+    PK & * & id & INT & -- & Уникальный идентификатор книги \\ \hline
+    FK & * & user\_id & INT & -- & Внешний ключ к таблице User \\ \hline
+    & * & title\_book & VARCHAR & 200 & Название книги \\ \hline
+    & & size & VARCHAR & 50 & Размер книги (мини, миди, макси) \\ \hline
+    & & chapter\_count & INT & -- & Количество глав \\ \hline
+    & & status & VARCHAR & 50 & Статус книги (черновик, завершено и др.) \\ \hline
+    & & cover\_path & VARCHAR & 200 & Путь к файлу обложки \\ \hline
+    & & created\_at & DATETIME & -- & Дата и время создания книги \\ \hline
+\end{xltabular}
+
+\begin{xltabular}{\textwidth}{|c|c|X|X|c|X|}
+    \caption{Таблица Arc -- Сюжетные арки\label{tab:arc}}\\ \hline
+    \centrow Key & \centrow Optionality & \centrow Column name & \centrow Data Type & \centrow Size & \centrow Характеристика \\ \hline
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 & \centrow 5 & \centrow 6 \\ \hline
+    \endfirsthead
+    \continuecaption{Продолжение таблицы \ref{tab:arc}}
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 & \centrow 5 & \centrow 6 \\ \hline
+    \endhead
+    \endlastfoot
+    PK & * & id & INT & -- & Уникальный идентификатор арки \\ \hline
+    FK & * & book\_id & INT & -- & Внешний ключ к таблице Book \\ \hline
+    & * & title\_arc & VARCHAR & 200 & Название сюжетной арки \\ \hline
+    & & arc\_number & INT & -- & Порядковый номер арки в книге \\ \hline
+\end{xltabular}
+
+\begin{xltabular}{\textwidth}{|c|c|X|X|c|X|}
+    \caption{Таблица Chapter -- Главы\label{tab:chapter}}\\ \hline
+    \centrow Key & \centrow Optionality & \centrow Column name & \centrow Data Type & \centrow Size & \centrow Характеристика \\ \hline
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 & \centrow 5 & \centrow 6 \\ \hline
+    \endfirsthead
+    \continuecaption{Продолжение таблицы \ref{tab:chapter}}
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 & \centrow 5 & \centrow 6 \\ \hline
+    \endhead
+    \endlastfoot
+    PK & * & id & INT & -- & Уникальный идентификатор главы \\ \hline
+    FK & * & arc\_id & INT & -- & Внешний ключ к таблице Arc \\ \hline
+    & * & title\_chapter & VARCHAR & 200 & Название главы \\ \hline
+    & & content & TEXT & -- & Содержимое главы в формате HTML \\ \hline
+    & & chapter\_number & INT & -- & Порядковый номер главы в арке \\ \hline
+\end{xltabular}
+
+\begin{xltabular}{\textwidth}{|c|c|X|X|c|X|}
+    \caption{Таблица ChapterVersion -- Версии глав\label{tab:chapterversion}}\\ \hline
+    \centrow Key & \centrow Optionality & \centrow Column name & \centrow Data Type & \centrow Size & \centrow Характеристика \\ \hline
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 & \centrow 5 & \centrow 6 \\ \hline
+    \endfirsthead
+    \continuecaption{Продолжение таблицы \ref{tab:chapterversion}}
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 & \centrow 5 & \centrow 6 \\ \hline
+    \endhead
+    \endlastfoot
+    PK & * & id & INT & -- & Уникальный идентификатор версии \\ \hline
+    FK & * & chapter\_id & INT & -- & Внешний ключ к таблице Chapter \\ \hline
+    & * & content & TEXT & -- & Содержимое главы на момент сохранения версии \\ \hline
+    & & created\_at & DATETIME & -- & Дата и время создания версии \\ \hline
+\end{xltabular}
+
+Такой подход к организации данных обеспечивает целостность иерархической структуры авторского контента и исключает дублирование информации. Все связи между таблицами реализованы через внешние ключи, что гарантирует ссылочную целостность при создании, редактировании и удалении записей.
+
+\subsection{Проектирование взаимодействия с внешним API}
+
+Взаимодействие между клиентской и серверной частями системы построено на основе HTTP-запросов. Клиент (браузер) отправляет запросы к серверу, который обрабатывает их и возвращает ответ в виде HTML-страницы или JSON. Для каждой операции в системе предусмотрен отдельный маршрут, определяющий, какой обработчик будет вызван.
+
+Часть маршрутов обслуживает переходы между страницами и возвращает готовые HTML-страницы (например, \texttt{/dashboard/}, \texttt{/book/<id>/}, \texttt{/chapter/<id>/}). Другая часть работает в фоновом режиме: клиент отправляет асинхронный запрос, сервер обрабатывает его и возвращает JSON-ответ, а интерфейс обновляется без перезагрузки страницы. К таким маршрутам относятся создание и удаление арок и глав, сохранение текста, импорт файлов и обращение к ИИ-ассистенту.
+
+В таблице~\ref{tab:api} перечислены основные маршруты серверной части с указанием HTTP-методов, входных данных и ожидаемого результата.
+
+\begin{xltabular}{\textwidth}{|>{\centering\arraybackslash}p{4.7cm}|>{\centering\arraybackslash}p{1.8cm}|>{\centering\arraybackslash}p{3.1cm}|X|}
+    \caption{Основные HTTP-запросы серверной части\label{tab:api}}\\ \hline
+    \centrow Маршрут & \centrow Метод & \centrow Входные данные & \centrow Результат \\ \hline
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \endfirsthead
+    \continuecaption{Продолжение таблицы \ref{tab:api}}
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \endhead
+    \hline
+    \endfoot
+    \hline
+    \endlastfoot
+    \texttt{/} & GET, POST & \texttt{username, password} & Вход в систему или возврат на страницу входа \\ \hline
+    \texttt{/register/} & GET, POST & \texttt{username, email, password, confirm\_password} & Создание учётной записи и автоматический вход \\ \hline
+    \texttt{/dashboard/} & GET & -- & Главная страница со списком книг пользователя \\ \hline
+    \texttt{/logout/} & GET & -- & Выход из системы, перенаправление на страницу входа \\ \hline
+    \texttt{/add-book/} & GET, POST & \texttt{title\_book, size, status} & Создание новой книги или редактирование существующей \\ \hline
+    \texttt{/book/<id>/} & GET & \texttt{id} в URL & Страница книги с арками и главами \\ \hline
+    \texttt{/add-arc/<book\_id>/} & POST & \texttt{title} & Создание новой арки (JSON) \\ \hline
+    \texttt{/rename-arc/<arc\_id>/} & POST & \texttt{title} & Смена названия арки (JSON) \\ \hline
+    \texttt{/delete-arc/<arc\_id>/} & DELETE & \texttt{id} в URL & Удаление арки и всех её глав \\ \hline
+    \texttt{/add-chapter/<arc\_id>/} & POST & \texttt{title} & Создание новой главы (JSON) \\ \hline
+    \texttt{/rename-chapter/ <chapter\_id>/} & POST & \texttt{title} & Смена названия главы (JSON) \\ \hline
+    \texttt{/delete-chapter/ <chapter\_id>/} & DELETE & \texttt{id} в URL & Удаление главы \\ \hline
+    \texttt{/delete-book/<book\_id>/} & DELETE & \texttt{id} в URL & Удаление книги \\ \hline
+    \texttt{/chapter/<id>/} & GET & \texttt{id} в URL & Страница редактора главы \\ \hline
+    \texttt{/chapter/<id>/save/} & POST & \texttt{content} (HTML) & Сохранение содержимого главы     \\ \hline
+    \texttt{/update\_cover/<book\_id>/} & POST & \texttt{cover} (файл) & Загрузка обложки книги \\ \hline
+    \texttt{/books/<book\_id>/ delete\_cover/} & POST & \texttt{id} в URL & Удаление обложки, установка обложки по умолчанию \\ \hline
+    \texttt{/export/docx/<chapter\_id>} & GET & \texttt{id} в URL & Экспорт одной главы в DOCX \\ \hline
+    \texttt{/export-selected-chapters/} & POST & \texttt{chapter\_ids} & Экспорт выбранных глав в DOCX \\ \hline
+    \texttt{/api/upload\_file/} & POST & \texttt{file} (PDF/DOCX), \texttt{chapter\_id} & Загрузка файла, получение числа страниц \\ \hline
+    \texttt{/api/import\_pages/} & POST & \texttt{chapter\_id}, \texttt{pages} & Импорт выбранных страниц в редактор \\ \hline
+    \texttt{/api/ai/chat/} & POST & \texttt{message}, \texttt{context} & Отправка запроса к ИИ-ассистенту, получение ответа \\ \hline
+    \texttt{/api/get\_book\_content/} & POST & \texttt{book\_id} & Получение содержимого книги для контекста ИИ \\ \hline
+\end{xltabular}
+
+Помимо обработки запросов от клиента, серверная часть также взаимодействует с внешним сервисом OpenRouter для обеспечения работы ИИ-ассистента. Это взаимодействие осуществляется через REST API. Запрос к OpenRouter формируется в функции \texttt{ai\_chat} в файле \texttt{views.py}. В контекстном режиме к запросу добавляется содержимое текущей главы и фрагменты других глав книги, что позволяет ассистенту давать ответы с учётом сюжета и персонажей. В общем режиме запрос отправляется без контекста книги. В таблице~\ref{tab:openrouter} приведены характеристики внешнего запроса.
+
+\begin{xltabular}{\textwidth}{|>{\raggedright\arraybackslash}p{3cm}|X|}
+    \caption{Внешние запросы к OpenRouter API\label{tab:openrouter}}\\ \hline
+    \centrow Параметр & \centrow Значение \\ \hline
+    \centrow 1 & \centrow 2 \\ \hline
+    \endfirsthead
+    \continuecaption{Продолжение таблицы \ref{tab:openrouter}}
+    \centrow 1 & \centrow 2 \\ \hline
+    \finishhead
+    Метод & POST \\ \hline
+    URL & \texttt{https://openrouter.ai/api/v1/chat/completions} \\ \hline
+    Заголовки & \texttt{Authorization: Bearer <API\_KEY>}, \texttt{Content-Type: application/json} \\ \hline
+    Формат запроса & JSON: \texttt{\{ "model": "...", "messages": [\{"role": "system", "content": "..."\}, \{"role": "user", "content": "..."\}], "temperature": 0.3--0.7, "max\_tokens": 2000 \}} \\ \hline
+    Формат ответа & JSON: \texttt{\{ "choices": [\{ "message": \{ "content": "..." \} \}] \}} \\ \hline
+    Обработка ошибок & При недоступности API пользователю выводится сообщение, остальные функции продолжают работать \\ \hline
+\end{xltabular}
+
+Для наглядности в таблице~\ref{tab:api-examples} приведены примеры тела запроса и ответа для основных маршрутов, возвращающих JSON. Примеры демонстрируют формат передачи данных при создании сущностей, сохранении текста и взаимодействии с ИИ-ассистентом.
+
+\begin{xltabular}{\textwidth}{|c|X|X|}
+    \caption{Примеры запросов и ответов API\label{tab:api-examples}}\\ \hline
+    \centrow Маршрут & \centrow Пример запроса & \centrow Пример ответа \\ \hline
+    \centrow 1 & \centrow 2 & \centrow 3 \\ \hline
+    \endfirsthead
+    \continuecaption{Продолжение таблицы \ref{tab:api-examples}}
+    \centrow 1 & \centrow 2 & \centrow 3 \\ \hline
+    \finishhead
+    \texttt{/register/} &
+    \texttt{\{"username": "author1", "email": "author@mail.ru", "password": "pass123", "confirm\_password": "pass123"\}} &
+    \texttt{\{"success": true\}} (перенаправление на \texttt{/dashboard/}) \\ \hline
+    \texttt{/add-arc/5/} &
+    \texttt{\{"title": "Знакомство"\}} &
+    \texttt{\{"id": 12, "title": "Знакомство"\}} \\ \hline
+    \texttt{/chapter/8/save/} &
+    \texttt{\{"content": "<p>Текст главы</p>"\}} &
+    \texttt{\{"success": true\}} \\ \hline
+    \texttt{/api/ai/chat/} &
+    \texttt{\{"message": "Опиши главного героя", "context": \{"isBookMode": true\}\}} &
+    \texttt{\{"reply": "Ваш герой -- смелый воин..."\}} \\ \hline
+    \texttt{/api/v1/chat/completions} &
+    \texttt{\{"model": "google/gemma-4-31b-it: free", "messages": [\{"role": "system", "content": "Ты -- ИИ-ассистент писателя..."\}, \{"role": "user", "content": "Опиши главного героя"\}], "temperature": 0.7, "max\_tokens": 2000\}} &
+    \texttt{\{"choices": [\{ "message": \{ "content": "Ваш герой -- смелый воин..." \} \}]\}} \\ \hline
+    \texttt{/export-selected-chapters/} &
+    \texttt{\{"chapter\_ids": [3, 5, 7]\}} &
+    (бинарный файл \texttt{.docx}) \\ \hline
+    \texttt{/api/upload\_file/} &
+    \texttt{(FormData с полем file)} &
+    \texttt{\{"success": true, "total\_pages": 15, "file\_name": "draft.docx"\}} \\ \hline
+\end{xltabular}
+
+\subsection{Проектирование пользовательского интерфейса}
+
+Пользовательский интерфейс разрабатываемой системы построен по единому шаблону. Все страницы наследуются от базового шаблона home.html. Он задаёт общую структуру: боковую панель с логотипом и навигацией и область основного содержимого. Это обеспечивает визуальное единство приложения и упрощает перемещение между разделами.
+
+Ниже приведены скриншоты всех страниц системы с описанием элементов интерфейса. Для каждого экрана указаны тип и назначение входящих в него компонентов.
+
+Страница входа является начальной точкой взаимодействия пользователя с системой. Она содержит форму авторизации с полями для ввода логина и пароля, а также ссылку для перехода к регистрации. Внешний вид страницы входа представлен на рисунке~\ref{fig:login}, описание элементов -- в таблице~\ref{tab:login}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{вход}
+    \caption{Страница входа в систему}
+    \label{fig:login}
+\end{figure}
+
+\begin{xltabular}{\textwidth}{|c|c|X|X|}
+    \caption{Описание элементов страницы входа\label{tab:login}}\\ \hline
+    \centrow \textnumero & \centrow Тип объекта & \centrow Имя элемента & \centrow Действие/описание \\ \hline
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \endfirsthead
+    \continuecaption{Продолжение таблицы \ref{tab:login}}
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \finishhead
+    1 & Input & username & Поле для ввода имени пользователя \\ \hline
+    2 & Input & password & Поле для ввода пароля, символы скрыты \\ \hline
+    3 & Button & login\_btn & Кнопка «Войти», отправляет данные для авторизации \\ \hline
+    4 & Link & register\_link & Ссылка «Зарегистрироваться», переход на страницу регистрации \\ \hline
+    5 & Image & logo & Логотип приложения NoName \\ \hline
+\end{xltabular}
+
+Страница регистрации позволяет новому пользователю создать учётную запись. Она содержит поля для ввода имени, email, пароля и его подтверждения. При успешной регистрации пользователь автоматически входит в систему. Внешний вид страницы представлен на рисунке~\ref{fig:register}, описание элементов -- в таблице~\ref{tab:register}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{регистрация}
+    \caption{Страница регистрации}
+    \label{fig:register}
+\end{figure}
+
+\begin{xltabular}{\textwidth}{|c|c|X|X|}
+    \caption{Описание элементов страницы регистрации\label{tab:register}}\\ \hline
+    \centrow \textnumero & \centrow Тип объекта & \centrow Имя элемента & \centrow Действие/описание \\ \hline
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \endfirsthead
+    \continuecaption{Продолжение таблицы \ref{tab:register}}
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \finishhead
+    1 & Input & username & Поле для ввода имени пользователя \\ \hline
+    2 & Input & email & Поле для ввода адреса электронной почты \\ \hline
+    3 & Input & password & Поле для ввода пароля, символы скрыты \\ \hline
+    4 & Input & confirm\_password & Поле для подтверждения пароля, символы скрыты \\ \hline
+    5 & Button & register\_btn & Кнопка «Зарегистрироваться», создаёт учётную запись \\ \hline
+    6 & Link & login\_link & Ссылка «Войти», переход на страницу авторизации \\ \hline
+\end{xltabular}
+
+Главная страница (дашборд) отображается сразу после входа в систему и содержит список книг текущего пользователя, а также элементы управления для фильтрации, поиска и создания новых книг. Внешний вид страницы представлен на рисунке~\ref{fig:dashboard}, описание элементов -- в таблице~\ref{tab:dashboard}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{главная страница}
+    \caption{Главная страница (дашборд)}
+    \label{fig:dashboard}
+\end{figure}
+
+\begin{xltabular}{\textwidth}{|c|c|X|X|}
+    \caption{Описание элементов главной страницы\label{tab:dashboard}}\\ \hline
+    \centrow \textnumero & \centrow Тип объекта & \centrow Имя элемента & \centrow Действие/описание \\ \hline
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \endfirsthead
+    \continuecaption{Продолжение таблицы \ref{tab:dashboard}}
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \finishhead
+    1 & Text & user\_greeting & Приветствие пользователя \\ \hline
+    2 & Input & search\_input & Поле «Поиск по названию», фильтрует книги по названию \\ \hline
+    3 & Select & size\_filter & Выпадающий список «Все размеры», фильтр книг по размеру \\ \hline
+    4 & Select & status\_filter & Выпадающий список «Все статусы», фильтр книг по статусу \\ \hline
+    5 & Button & add\_book\_btn & Кнопка «Добавить книгу», открывает форму создания новой книги \\ \hline
+    6 & Button & logout\_btn & Кнопка «Выйти», завершает сеанс \\ \hline
+    7 & Image & book\_cover & Обложка книги (или изображение по умолчанию) \\ \hline
+    8 & Text & book\_title & Название книги \\ \hline
+    9 & Text & book\_info & Блок с информацией о книге: размер, статус, количество глав \\ \hline
+    10 & Button & open\_btn & Кнопка «Открыть», переход на страницу книги \\ \hline
+    11 & Button & edit\_btn & Кнопка «Редактировать», открывает форму изменения книги \\ \hline
+    12 & Button & delete\_btn & Кнопка «Удалить», удаляет книгу после подтверждения \\ \hline
+    13 & Card & book\_card & Карточка книги, объединяет обложку, информацию и кнопки \\ \hline
+\end{xltabular}
+
+Форма добавления книги открывается при нажатии кнопки «Добавить книгу» на главной странице. Она содержит поля для ввода названия, выбора размера и статуса книги, а также кнопки сохранения и отмены. Внешний вид формы представлен на рисунке~\ref{fig:add-book}, описание элементов -- в таблице~\ref{tab:add-book}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{добавление книги}
+    \caption{Форма добавления книги}
+    \label{fig:add-book}
+\end{figure}
+
+\begin{xltabular}{\textwidth}{|c|c|X|X|}
+    \caption{Описание элементов формы добавления книги\label{tab:add-book}}\\ \hline
+    \centrow \textnumero & \centrow Тип объекта & \centrow Имя элемента & \centrow Действие/описание \\ \hline
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \endfirsthead
+    \continuecaption{Продолжение таблицы \ref{tab:add-book}}
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \finishhead
+    1 & Input & title\_book & Поле для ввода названия книги \\ \hline
+    2 & Select & size & Выпадающий список для выбора размера книги (мини, миди, макси) \\ \hline
+    3 & Select & status & Выпадающий список для выбора статуса книги (черновик, завершено и др.) \\ \hline
+    4 & Button & submit\_btn & Кнопка «Добавить», сохраняет книгу и перенаправляет на её страницу \\ \hline
+    5 & Button & cancel\_btn & Кнопка «Отмена», возвращает на главную страницу без сохранения \\ \hline
+\end{xltabular}
+
+Страница книги открывается при нажатии кнопки «Открыть» на карточке книги. Здесь автор видит структуру выбранного произведения: обложку, список арок и входящих в них глав, а также элементы управления для изменения этой структуры. Внешний вид страницы представлен на рисунке~\ref{fig:book-page}, описание элементов -- в таблице~\ref{tab:book-page}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{страница книги}
+    \caption{Страница книги}
+    \label{fig:book-page}
+\end{figure}
+
+\begin{xltabular}{\textwidth}{|c|c|X|X|}
+    \caption{Описание элементов страницы книги\label{tab:book-page}}\\ \hline
+    \centrow \textnumero & \centrow Тип объекта & \centrow Имя элемента & \centrow Действие/описание \\ \hline
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \endfirsthead
+    \continuecaption{Продолжение таблицы \ref{tab:book-page}}
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \finishhead
+    1 & Button & back\_btn & Кнопка «Назад», возвращает на главную страницу \\ \hline
+    2 & Image & book\_cover & Обложка книги (или изображение по умолчанию) \\ \hline
+    3 & Button & delete\_cover\_btn & Кнопка «Удалить обложку», сбрасывает обложку до изображения по умолчанию \\ \hline
+    4 & Button & add\_chapter\_btn & Кнопка «+», создаёт новую главу внутри арки \\ \hline
+    5 & Button & rename\_arc\_btn & Кнопка редактирования названия арки \\ \hline
+    6 & Button & delete\_arc\_btn & Кнопка удаления арки вместе со всеми главами \\ \hline
+    7 & Button & chapter\_item & Элемент списка -- глава. При нажатии на название открывает редактор. Рядом с названием расположены кнопки переименования и удаления главы (аналогично арке) \\ \hline
+    8 & Block & arc\_block & Блок арки, объединяет название арки, кнопки управления аркой и список глав \\ \hline
+    9 & Text & book\_title & Название текущей книги \\ \hline
+    10 & Button & add\_arc\_btn & Кнопка «Добавить арку», создаёт новую арку \\ \hline
+    11 & Button & export\_btn & Кнопка «Экспорт в Word», открывает окно выбора глав для экспорта \\ \hline
+\end{xltabular}
+
+Окно экспорта глав открывается при нажатии кнопки «Экспорт в Word» на странице книги. Оно позволяет выбрать нужные главы с помощью флажков и выгрузить их в один файл DOCX. Внешний вид окна представлен на рисунке~\ref{fig:export}, описание элементов -- в таблице~\ref{tab:export}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\linewidth]{экспорт глав}
+    \caption{Окно экспорта глав}
+    \label{fig:export}
+\end{figure}
+
+\begin{xltabular}{\textwidth}{|c|c|X|X|}
+    \caption{Описание элементов окна экспорта глав\label{tab:export}}\\ \hline
+    \centrow \textnumero & \centrow Тип объекта & \centrow Имя элемента & \centrow Действие/описание \\ \hline
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \endfirsthead
+    \continuecaption{Продолжение таблицы \ref{tab:export}}
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \finishhead
+    1 & Container & chapter\_list & Блок со списком глав, каждая с флажком (checkbox) для выбора \\ \hline
+    2 & Button & cancel\_btn & Кнопка «Отмена», закрывает окно без экспорта \\ \hline
+    3 & Button & select\_all\_btn & Кнопка «Выбрать все», отмечает все главы одновременно \\ \hline
+    4 & Button & export\_btn & Кнопка «Экспортировать», формирует и скачивает файл DOCX \\ \hline
+\end{xltabular}
+
+Страница редактора главы открывается при нажатии на название главы на странице книги. Здесь автор работает с текстом: вводит, форматирует и сохраняет содержимое. Внешний вид страницы представлен на рисунке~\ref{fig:editor}, описание элементов -- в таблице~\ref{tab:editor}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{редактор главы}
+    \caption{Страница редактора главы}
+    \label{fig:editor}
+\end{figure}
+
+\begin{xltabular}{\textwidth}{|c|c|X|X|}
+    \caption{Описание элементов страницы редактора главы\label{tab:editor}}\\ \hline
+    \centrow \textnumero & \centrow Тип объекта & \centrow Имя элемента & \centrow Действие/описание \\ \hline
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \endfirsthead
+    \continuecaption{Продолжение таблицы \ref{tab:editor}}
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \finishhead
+    1 & Button & save\_btn & Кнопка «Сохранить», немедленно сохраняет текст главы на сервер \\ \hline
+    2 & Button & import\_btn & Кнопка «Импорт», открывает окно загрузки файла PDF или DOCX \\ \hline
+    3 & Button & ai\_btn & Кнопка «AI-ассистент», открывает окно чата с ИИ \\ \hline
+    4 & Text & word\_counter & Счётчик слов и символов, обновляется автоматически при изменении текста \\ \hline
+    5 & Toolbar & editor\_toolbar & Тулбар редактора, содержит кнопки форматирования текста \\ \hline
+    6 & Button & clean\_btn & Кнопка очистки форматирования выделенного текста \\ \hline
+    7 & Button & link\_btn & Кнопка добавления ссылки \\ \hline
+    8 & Button & indent\_btns & Кнопки изменения отступа текста (влево/вправо) \\ \hline
+    9 & Select & align\_select & Выпадающий список выбора выравнивания текста \\ \hline
+    10 & Select & color\_select & Выпадающий список выбора цвета текста \\ \hline
+    11 & Select & header\_select & Выпадающий список выбора стиля заголовка \\ \hline
+    12 & Button & strike\_btn & Кнопка зачёркивания текста \\ \hline
+    13 & Button & underline\_btn & Кнопка подчёркивания текста \\ \hline
+    14 & Button & italic\_btn & Кнопка курсива \\ \hline
+    15 & Button & bold\_btn & Кнопка жирного шрифта \\ \hline
+    16 & Input & editor\_area & Поле редактора, в котором автор вводит и форматирует текст \\ \hline
+    17 & Container & navigation\_panel & Блок навигации по книге, содержит список всех арок и глав \\ \hline
+    18 & Link & chapter\_link & Ссылка на главу внутри арки в панели навигации. При нажатии открывает эту главу в редакторе \\ \hline
+    19 & Block & arc\_nav\_block & Блок арки в панели навигации, может быть свёрнут или развёрнут \\ \hline
+\end{xltabular}
+
+Окно импорта текста открывается при нажатии кнопки «Импорт» на странице редактора главы. Оно состоит из двух шагов. На первом шаге автор выбирает файл для загрузки (элементы 1--4), на втором -- указывает диапазон страниц для импорта (элементы 5--8). Внешний вид окна представлен на рисунках~\ref{fig:import1} и~\ref{fig:import2}, описание элементов -- в таблице~\ref{tab:import}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\linewidth]{импорт текста}
+    \caption{Окно импорта текста -- шаг 1: выбор файла}
+    \label{fig:import1}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\linewidth]{импорт текста1}
+    \caption{Окно импорта текста -- шаг 2: выбор страниц}
+    \label{fig:import2}
+\end{figure}
+
+\begin{xltabular}{\textwidth}{|c|c|X|X|}
+    \caption{Описание элементов окна импорта текста\label{tab:import}}\\ \hline
+    \centrow \textnumero & \centrow Тип объекта & \centrow Имя элемента & \centrow Действие/описание \\ \hline
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \endfirsthead
+    \continuecaption{Продолжение таблицы \ref{tab:import}}
+        \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \finishhead
+    1 & Button & file\_select\_btn & Кнопка «Выбрать файл», открывает проводник для выбора PDF или DOCX \\ \hline
+    2 & Area & drop\_area & Область для перетаскивания файла. При нажатии или перетаскивании запускает загрузку \\ \hline
+    3 & Text & title & Заголовок «Импорт текста» \\ \hline
+    4 & Button & close\_btn & Кнопка закрытия окна импорта (крестик) \\ \hline
+    5 & Input & page\_range & Поле для ввода диапазона страниц (например, «1-5» или «1,3,5») \\ \hline
+    6 & Button & import\_btn & Кнопка «Импортировать текст», запускает извлечение и вставку текста \\ \hline
+    7 & Button & all\_pages\_btn & Кнопка «Все страницы», автоматически подставляет весь диапазон \\ \hline
+    8 & Button & back\_btn & Кнопка «Назад», возвращает к шагу выбора файла \\ \hline
+\end{xltabular}
+
+Окно ИИ-ассистента позволяет автору задавать вопросы языковой модели, переключаясь между контекстным и общим режимами. Внешний вид окна представлен на рисунке~\ref{fig:ai}, описание элементов -- в таблице~\ref{tab:ai}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.54\linewidth]{ии асистент}
+    \caption{Окно ИИ-ассистента}
+    \label{fig:ai}
+\end{figure}
+
+\begin{xltabular}{\textwidth}{|c|c|X|X|}
+    \caption{Описание элементов окна ИИ-ассистента\label{tab:ai}}\\ \hline
+    \centrow \textnumero & \centrow Тип объекта & \centrow Имя элемента & \centrow Действие/описание \\ \hline
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \endfirsthead
+    \continuecaption{Продолжение таблицы \ref{tab:ai}}
+    \centrow 1 & \centrow 2 & \centrow 3 & \centrow 4 \\ \hline
+    \finishhead
+    1 & Area & chat\_messages & Область сообщений, в которой отображается диалог с ассистентом \\ \hline
+    2 & Checkbox & mode\_toggle & Переключатель режимов: контекстный (с учётом книги) и общий \\ \hline
+    3 & Input & chat\_input & Поле для ввода текстового запроса \\ \hline
+    4 & Button & send\_btn & Кнопка отправки запроса \\ \hline
+\end{xltabular}
+
